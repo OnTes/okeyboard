@@ -26,7 +26,6 @@ namespace Layout
 
 void setup()
 {
-    Serial.begin(9600);
     Input::begin();
     Output::begin();
 }
@@ -52,4 +51,6 @@ void loop()
         }
     
     Output::send();
+
+    delay(2);
 }

@@ -40,6 +40,7 @@ namespace Output
     };
 
     static Report report;
+    static unsigned char count = 0;
 
     static const uint8_t description[] PROGMEM =
     {
@@ -58,7 +59,7 @@ namespace Output
         0x29, 0xE7, // USAGE_MAXIMUM (RGUI)
         0x81, 0x02, // INPUT (Data,Var,Abs)
 
-        // Consumer report
+        // Consumer keys
         0x05, 0x0C, // USAGE_PAGE (Consumer)
         0x95, 0x01, // REPORT_COUNT (1)
         0x75, 0x08, // REPORT_SIZE (8)
@@ -98,15 +99,13 @@ namespace Output
         if (key >= Key::LCTRL)
             report.modifiers |= (1 << ((uint8_t)key - (uint8_t)Key::LCTRL));
         
-        // Regular key
-        for (unsigned int i = 0; i < ROLLOVER; i++)
-            if (report.keys[i] == Key::NONE)
-            {
-                report.keys[i] = key;
-                return true;
-            }
+        if (count >= ROLLOVER)
+            return false;
         
-        return false;
+        // Regular key
+        report.keys[count] = key;
+        count++;
+        return true;
     }
 
     void send()
@@ -118,5 +117,6 @@ namespace Output
         report.consumer = 0;
         for (unsigned int i = 0; i < ROLLOVER; i++)
             report.keys[i] = Key::NONE;
+        count = 0;
     }
 }
