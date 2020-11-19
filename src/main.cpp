@@ -1,20 +1,6 @@
 #include <Arduino.h>
 #include <HID.h>
 
-// Size of the keyboard
-#define ROW_COUNT 4
-#define COL_COUNT 12
-
-// Maximum number of keys pressed at once
-#define ROLLOVER 6
-
-// Delay between pressing and releasing a key
-#define REPEAT_TIME 50
-
-// Pinout
-const uint8_t ROW_PINS[ROW_COUNT] = { 21, 7, 16, 8 };
-const uint8_t COL_PINS[COL_COUNT] = { 20, 19, 18, 15, 14, 10, 9, 6, 5, 4, 3, 2 };
-
 enum Key : unsigned char
 {
     NONE = 0x00,
@@ -40,6 +26,20 @@ enum Key : unsigned char
     LCTRL = 0xE0, LSHIFT, LALT, LGUI,
     RCTRL, RSHIFT, RALT, RGUI
 };
+
+// Size of the keyboard
+#define ROW_COUNT 4
+#define COL_COUNT 12
+
+// Maximum number of keys pressed at once
+#define ROLLOVER 6
+
+// Minimal time (in ms) between pressing and releasing a key
+#define REPEAT_TIME 50
+
+// Pinout
+const uint8_t ROW_PINS[ROW_COUNT] = { 21, 7, 16, 8 };
+const uint8_t COL_PINS[COL_COUNT] = { 20, 19, 18, 15, 14, 10, 9, 6, 5, 4, 3, 2 };
 
 // Position of FN key
 #define FN_KEY_ROW 3
@@ -75,6 +75,7 @@ struct Report
 
 Report report;
 unsigned char reportKeyCount = 0;
+bool changed;
 
 const uint8_t description[] PROGMEM =
 {
@@ -117,68 +118,66 @@ HIDSubDescriptor descriptor(description, sizeof(description));
 
 void addKeyToReport(Key key)
 {
-    if (key == NONE)
-        return;
-
     // Modifier key
     if (key >= LCTRL)
         report.modifiers |= (1 << ((uint8_t)key - (uint8_t)LCTRL));
     
-    if (reportKeyCount >= ROLLOVER)
-        return;
-    
     // Regular key
-    report.keys[reportKeyCount] = key;
-    reportKeyCount++;
+    if (key != NONE && reportKeyCount < ROLLOVER)
+    {
+        report.keys[reportKeyCount] = key;
+        reportKeyCount++;
+    }
 }
 
 void setup()
 {
-    // Setup input
     for (unsigned char i = 0; i < COL_COUNT; i++)
         pinMode(COL_PINS[i], INPUT_PULLUP);
 
-    // Setup output
     HID().begin();
     HID().AppendDescriptor(&descriptor);
 }
 
 void loop()
 {
-    // Clear the report
-    memset(&report, 0, sizeof(Report));
-    reportKeyCount = 0;
+    changed = false;
 
-    // Iterate trough all the keys
-    for (unsigned char row = 0; row < ROW_COUNT; row++)
+    for (int row = 0; row < ROW_COUNT; row++)
     {
         pinMode(ROW_PINS[row], OUTPUT);
         digitalWrite(ROW_PINS[row], LOW);
 
-        for (unsigned char col = 0; col < COL_COUNT; col++)
+        for (int col = 0; col < COL_COUNT; col++)
         {
-            // Update the status of the key
             // NOTE: digitalRead() returns oposite value than what we want
             if (keyState[row][col] == digitalRead(COL_PINS[col])
                 && millis() > keyTime[row][col])
             {
                 keyState[row][col] = !keyState[row][col];
                 keyTime[row][col] = millis() + REPEAT_TIME;
-            }
-
-            // Add the key to the report if pressed
-            if (keyState[row][col])
-            {
-                if (!keyState[FN_KEY_ROW][FN_KEY_COL])
-                    addKeyToReport(LAYOUT_BASE[row][col]);
-                else
-                    addKeyToReport(LAYOUT_FN[row][col]);
+                changed = true;
             }
         }
 
         pinMode(ROW_PINS[row], INPUT);
     }
-    
-    // Send the report
-    HID().SendReport(2, &report, sizeof(Report));
+
+    if (changed)
+    {
+        memset(&report, 0, sizeof(Report));
+        reportKeyCount = 0;
+
+        for (int row = 0; row < ROW_COUNT; row++)
+            for (int col = 0; col < COL_COUNT; col++)
+                if (keyState[row][col])
+                {
+                    if (!keyState[FN_KEY_ROW][FN_KEY_COL])
+                        addKeyToReport(LAYOUT_BASE[row][col]);
+                    else
+                        addKeyToReport(LAYOUT_FN[row][col]);
+                }
+        
+        HID().SendReport(2, &report, sizeof(Report));
+    }
 }
